@@ -15,7 +15,7 @@ const handleEvent = async (msg, channel) => {
     console.log("Received request:", content);
 
     // Extract userID correctly
-    const id=content.userId;
+    const id=content.userId||content.userID;
     console.log("userID:", id);
 
     if (!id) {
