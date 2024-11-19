@@ -20,4 +20,4 @@ router.get('/profile', auth, profile);
 router.post('/updateProfile', auth, upload.single('photo'), updateProfile);
 router.post('/dashboard', loadDashboard);
 router.get('/getAllOrders', auth, getOrder);
-module.exports = router; // Export the router
+module.exports = router; 

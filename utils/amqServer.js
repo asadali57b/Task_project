@@ -1,66 +1,93 @@
-const amqp=require('amqplib');
-const {addToCart,createOrder}=require('../services/db')
-let response;
-let Response=(channel,msg,response)=>{
+const amqp = require("amqplib");
+const { addToCart, createOrder } = require("../services/db");
+
+const sendResponse = (channel, msg, response) => {
   channel.sendToQueue(
     msg.properties.replyTo,
     Buffer.from(JSON.stringify(response)),
     { correlationId: msg.properties.correlationId }
   );
+};
 
-}
-let handleEvent = async(msg, channel) => {
-    let content = JSON.parse(msg.content.toString());
+const handleEvent = async (msg, channel) => {
+  try {
+    const content = JSON.parse(msg.content.toString());
+    console.log("Received request:", content);
+
+    // Extract userID correctly
+    const id=content.userId;
+    console.log("userID:", id);
+
+    if (!id) {
+      console.error("Invalid or missing userID in request");
+      return sendResponse(channel, msg, { status: "FAILED", message: "Invalid userID" });
+    }
     switch (content.type) {
       case "CREATE_ORDER":
-        response = {
-          STATUS:"SUCCESS",
-          MESSAGE:"Order created for "+content        
-   }
-     let orderResponse=await createOrder(content.userID);
-        Response(channel,msg,orderResponse);
-        break;
-        case "ADD_TO_CART":
-         console.log("cart",content.product);
-         response = {
-                STATUS:"SUCCESS",
-                MESSAGE:"Item added to cart for "+content.product.name          
-         }
-         try {
-          let data=await addToCart(content.userID,content.product);
-          console.log("db response",data);
-          Response(channel,msg,data);
+        console.log(`Processing CREATE_ORDER for userID: ${id}`);
+        console.log(`TYPE: ${content.type}`);
 
-         } catch (error) {
-          Response(channel,msg,error);
-
-         }
+        try {
+          const orderResponse = await createOrder(id);
+          sendResponse(channel, msg, orderResponse);
+        } catch (error) {
+          console.error("Error creating order:", error.message);
+          sendResponse(channel, msg, { status: "ERROR", message: error.message });
+        }
         break;
+
+      case "ADD_TO_CART":
+        console.log(`Processing ADD_TO_CART for userID: ${id}, product:`, content.product);
+        try {
+          const cartResponse = await addToCart(id, content.product);
+          sendResponse(channel, msg, cartResponse);
+        } catch (error) {
+          console.error("Error adding to cart:", error.message);
+          sendResponse(channel, msg, { status: "ERROR", message: error.message });
+        }
+        break;
+
+      default:
+        console.error(`Unknown event type: ${content.type}`);
+        sendResponse(channel, msg, { status: "FAILED", message: "Unknown event type" });
     }
-  };
+  } catch (error) {
+    console.error("Error handling event:", error.message);
+    sendResponse(channel, msg, { status: "ERROR", message: error.message });
+  }
+};
 
 
-async function startRpcServer() {
-  const connection = await amqp.connect("amqp://localhost");
-  const channel = await connection.createChannel();
-  const queue = "rpc_queue";
 
-  channel.assertQueue(queue, { durable: false });
-  channel.prefetch(1);
+const startRpcServer = async () => {
+  try {
+    const connection = await amqp.connect("amqp://localhost");
+    const channel = await connection.createChannel();
+    const queue = "rpc_queue";
 
-  console.log("Awaiting RPC requests");
+    await channel.assertQueue(queue, { durable: false });
+    channel.prefetch(1);
 
-  channel.consume(queue, async (msg) => {
+    console.log("RPC Server is running. Awaiting requests...");
 
-    const content = JSON.parse(msg.content.toString());
-   // console.log("Received request:", content);
-    console.log(msg.properties.replyTo);
-    // Assuming we're just returning the total price for this example
-    handleEvent(msg, channel);
+    channel.consume(queue, async (msg) => {
+      console.log("Received request:", msg.content.toString());
+      await handleEvent(msg, channel);
+      // await rpcServer(JSON.parse(msg.content.toString()));
+      channel.ack(msg);
+    });
 
-    channel.ack(msg);
-  });
-}
+    process.on("SIGINT", async () => {
+      console.log("Closing RPC Server...");
+      await channel.close();
+      await connection.close();
+      process.exit(0);
+    });
+  } catch (error) {
+    console.error("Error starting RPC Server:", error.message);
+    process.exit(1);
+  }
+};
 
 module.exports = startRpcServer;
 

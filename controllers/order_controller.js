@@ -3,7 +3,7 @@ const mongoose = require("mongoose");
 
 exports.getOrder = async (req, res) => {
     try {
-      // Validate if req.user._id exists and is valid
+      
       const userId = req.user?._id;
   
       if (!userId) {
@@ -20,8 +20,8 @@ exports.getOrder = async (req, res) => {
         });
       }
   
-      // Fetch user and their orders
-      const user = await User.findById(userId).populate("order"); // Assuming "order" is a referenced field
+      
+      const user = await User.findById(userId).populate("order"); 
       if (!user) {
         return res.status(404).json({
           STATUS: "FAILED",
